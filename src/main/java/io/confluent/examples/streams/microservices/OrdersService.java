@@ -11,11 +11,13 @@ import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.Consumed;
 import org.apache.kafka.streams.KafkaStreams;
+import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.errors.InvalidStateStoreException;
-import org.apache.kafka.streams.kstream.KStreamBuilder;
 import org.apache.kafka.streams.kstream.Predicate;
+import org.apache.kafka.streams.kstream.Serialized;
 import org.apache.kafka.streams.state.QueryableStoreTypes;
 import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 import org.eclipse.jetty.server.Server;
@@ -125,12 +127,10 @@ public class OrdersService implements Service {
    * we check to see if there is an outstanding HTTP GET request waiting to be
    * fulfilled.
    */
-  private KStreamBuilder createOrdersMaterializedView() {
-    KStreamBuilder builder = new KStreamBuilder();
-    builder.stream(ORDERS.keySerde(), ORDERS.valueSerde(), ORDERS.name())
-        .groupByKey(ORDERS.keySerde(), ORDERS.valueSerde())
-        .reduce((agg, newVal) -> newVal, ORDERS_STORE_NAME)
-        .toStream().foreach(this::maybeCompleteLongPollGet);
+  private StreamsBuilder createOrdersMaterializedView() {
+    StreamsBuilder builder = new StreamsBuilder();
+    builder.table(ORDERS.name(), Consumed.with(ORDERS.keySerde(), ORDERS.valueSerde()))
+      .toStream().foreach(this::maybeCompleteLongPollGet);
     return builder;
   }
 
@@ -317,8 +317,7 @@ public class OrdersService implements Service {
   }
 
   private KafkaStreams startKStreams(String bootstrapServers) {
-    KafkaStreams streams = new KafkaStreams(createOrdersMaterializedView(),
-        config(bootstrapServers));
+    KafkaStreams streams = new KafkaStreams(createOrdersMaterializedView().build(), config(bootstrapServers));
     metadataService = new MetadataService(streams);
     streams.cleanUp(); //don't do this in prod as it clears your state stores
     streams.start();
